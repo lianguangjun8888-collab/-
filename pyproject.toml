@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qianniu-local-assistant"
+version = "0.1.0"
+description = "Self-use Windows Qianniu rule editor and local AI assistant"
+requires-python = ">=3.12"
+dependencies = ["PySide6==6.8.3", "httpx==0.28.1", "pywinauto==0.6.9; sys_platform == 'win32'"]
+
+[project.scripts]
+qianniu-assistant = "qianniu_assistant.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
