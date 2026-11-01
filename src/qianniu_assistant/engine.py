@@ -113,7 +113,7 @@ class Coordinator:
                 ai = self.ai
                 if ai is None:
                     from .ai import AIClient
-                    ai = AIClient(model=settings['model'],shop_info=settings['shop_info'],base_url=settings['base_url'])
+                    ai = AIClient(model=settings['model'],shop_info=settings['shop_infos'].get(event.shop,settings['shop_info']),base_url=settings['base_url'])
                 return await ai.reply('\n'.join(self.pending.get(key, [event.text]))[-4000:])
             task = asyncio.create_task(generate())
             self.ai_tasks[key] = task

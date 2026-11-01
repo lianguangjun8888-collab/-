@@ -1,6 +1,7 @@
 """本地 SQLite 持久化；规则导入和发送确认分别保持原子性。"""
 from dataclasses import asdict
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -10,7 +11,7 @@ from .matching import validate_rule
 
 DEFAULTS = dict(fallback='none', default_reply='您好，稍后由人工为您处理。',
                 simple_mode=False, simple_reply='您好，请稍等。', ai_provider='ollama',
-                model='qwen2.5:3b', base_url='http://127.0.0.1:11434', shop_info='',
+                model='qwen2.5:3b', base_url='http://127.0.0.1:11434', shop_info='', shop_infos={},
                 record_body=True)
 
 
@@ -99,7 +100,7 @@ class Store:
 
     def settings(self):
         with self.connect() as db:
-            return DEFAULTS | {r['key']: json.loads(r['value']) for r in db.execute('SELECT * FROM settings')}
+            return deepcopy(DEFAULTS) | {r['key']: json.loads(r['value']) for r in db.execute('SELECT * FROM settings')}
 
     def set_settings(self, values):
         if set(values) - DEFAULTS.keys():
@@ -109,6 +110,9 @@ class Store:
                 raise ValueError(f'{k} 类型不正确')
             if isinstance(v, str) and len(v) > 10000:
                 raise ValueError('设置文本过长')
+            if k == 'shop_infos' and (len(v) > 100 or any(not isinstance(shop,str) or not shop.strip()
+                    or len(shop) > 200 or not isinstance(info,str) or len(info) > 10000 for shop,info in v.items())):
+                raise ValueError('店铺资料须为店铺名到文本的映射，最多 100 店，每店 10000 字')
         if values.get('fallback', 'none') not in ('none', 'default', 'ai'):
             raise ValueError('未知未命中策略')
         if values.get('ai_provider', 'ollama') != 'ollama':

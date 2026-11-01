@@ -27,7 +27,7 @@ class RuleDialog(QDialog):
         self.enabled = QCheckBox('启用此规则'); self.enabled.setChecked(self.rule.enabled)
         self.favorite = QCheckBox('收藏'); self.favorite.setChecked(self.rule.favorite)
         for label, widget in [('名称',self.name),('适用店铺',self.shop),('分类',self.category),('匹配方式',self.match_type),
-                              ('关键词',self.expression),('回复（每行一条）',self.replies),('优先级（小数优先）',self.priority),('',self.enabled),('',self.favorite)]:
+                              ('关键词',self.expression),('回复（每行一条）',self.replies),('优先级（越小越优先）',self.priority),('',self.enabled),('',self.favorite)]:
             form.addRow(label,widget)
         help_text = QLabel('# 完整条件或　| 组内或　+ 各组都满足　& 按顺序出现\n完全匹配仅支持 #；关键词不支持减号或括号。')
         help_text.setWordWrap(True); layout.addWidget(help_text)

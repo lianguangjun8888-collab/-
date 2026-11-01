@@ -107,3 +107,21 @@ def test_unavailable_adapter_cannot_claim_live_success(tmp_path):
   assert (await c.handle(event())).status=='error'
   assert not any(h['status']=='sent' for h in s.history())
  asyncio.run(run())
+
+
+def test_ai_uses_only_selected_shop_profile(tmp_path,monkeypatch):
+ import json,httpx
+ import qianniu_assistant.ai as ai_module
+ RealClient=ai_module.AIClient
+ prompts=[]
+ def respond(req):
+  if req.url.path=='/api/show': return httpx.Response(200,json={'details':{'family':'qwen'}})
+  prompts.append(json.loads(req.content)['messages'][0]['content'])
+  return httpx.Response(200,json={'message':{'content':'已核实'},'done':True})
+ monkeypatch.setattr(ai_module,'AIClient',lambda **kw:RealClient(**kw,transport=httpx.MockTransport(respond)))
+ async def run():
+  s,a,c=setup(tmp_path); c.set_enabled(True)
+  s.set_settings({'fallback':'ai','shop_infos':{'甲':'甲店只卖书','乙':'乙店只卖衣服'}})
+  assert (await c.handle(event(text='卖什么'))).status=='sent'
+  assert '甲店只卖书' in prompts[0] and '乙店只卖衣服' not in prompts[0]
+ asyncio.run(run())

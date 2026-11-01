@@ -67,3 +67,12 @@ def test_invalid_settings_are_atomic(tmp_path):
  s=Store(tmp_path/'x.db')
  with pytest.raises(ValueError): s.set_settings({'shop_info':'changed','record_body':'false'})
  assert s.settings()['shop_info']==''
+
+
+def test_shop_ai_profiles_are_isolated_and_validated(tmp_path):
+ s=Store(tmp_path/'a.db'); t=Store(tmp_path/'b.db')
+ s.set_settings({'shop_infos':{'甲':'甲店商品','乙':'乙店商品'}})
+ assert t.settings()['shop_infos']=={}
+ assert s.settings()['shop_infos']['乙']=='乙店商品'
+ with pytest.raises(ValueError): s.set_settings({'shop_infos':{'甲':['invalid']}})
+ assert s.settings()['shop_infos']['甲']=='甲店商品'

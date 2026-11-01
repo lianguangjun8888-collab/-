@@ -134,12 +134,14 @@ class MainWindow(QMainWindow):
         self.default_reply = QLineEdit(cfg['default_reply'])
         self.base_url = QLineEdit(cfg['base_url'])
         self.ai_model = QComboBox(); self.ai_model.setEditable(True); self.ai_model.addItem(cfg['model'])
+        self.ai_shop = QLineEdit(); self.ai_shop.setPlaceholderText('留空为通用资料；填写店铺名可分别保存')
+        self.ai_shop.editingFinished.connect(self.load_shop_info)
         self.shop_info = QPlainTextEdit(cfg['shop_info']); self.shop_info.setMaximumHeight(100)
         self.shop_info.setPlaceholderText('填写已核实的商品、发货、售后信息；资料不足时让 AI 转人工核实。')
         self.simple_mode = QCheckBox('最简模式：所有买家文字使用统一话术'); self.simple_mode.setChecked(cfg['simple_mode'])
         self.simple_reply = QLineEdit(cfg['simple_reply'])
         for title,widget in [('未命中策略',self.fallback),('固定默认回复',self.default_reply),('本机服务地址',self.base_url),
-                             ('本地模型',self.ai_model),('通用店铺资料',self.shop_info),('',self.simple_mode),('统一话术',self.simple_reply)]:
+                             ('本地模型',self.ai_model),('资料适用店铺',self.ai_shop),('店铺资料',self.shop_info),('',self.simple_mode),('统一话术',self.simple_reply)]:
             form.addRow(title,widget)
         layout.addLayout(form)
         row = QHBoxLayout(); row.addWidget(button('保存设置',self.save_ai_settings))
@@ -285,9 +287,18 @@ class MainWindow(QMainWindow):
         self._launch(run_simulation,done,lambda msg:self.test_output.setPlainText(msg),self.simulate_button)
 
     def _ai_config(self):
+        cfg = self.store.settings()
+        shop = self.ai_shop.text().strip()
+        infos = cfg['shop_infos'].copy()
+        if shop: infos[shop] = self.shop_info.toPlainText()
         return dict(fallback=self.fallback.currentData(),default_reply=self.default_reply.text(),
                     base_url=self.base_url.text().strip(),model=self.ai_model.currentText().strip(),
-                    shop_info=self.shop_info.toPlainText(),simple_mode=self.simple_mode.isChecked(),simple_reply=self.simple_reply.text())
+                    shop_info=cfg['shop_info'] if shop else self.shop_info.toPlainText(),shop_infos=infos,
+                    simple_mode=self.simple_mode.isChecked(),simple_reply=self.simple_reply.text())
+
+    def load_shop_info(self):
+        cfg = self.store.settings(); shop = self.ai_shop.text().strip()
+        self.shop_info.setPlainText(cfg['shop_infos'].get(shop,'') if shop else cfg['shop_info'])
 
     def save_ai_settings(self):
         try:
@@ -296,7 +307,7 @@ class MainWindow(QMainWindow):
 
     def _client(self):
         cfg = self._ai_config()
-        return AIClient(model=cfg['model'],base_url=cfg['base_url'],shop_info=cfg['shop_info'])
+        return AIClient(model=cfg['model'],base_url=cfg['base_url'],shop_info=self.shop_info.toPlainText())
 
     def detect_models(self):
         try: client = self._client()

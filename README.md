@@ -1,0 +1,80 @@
+# 千牛本地助手（自用免费版）
+
+Windows 桌面话术管理、规则匹配和 Ollama 本地 AI。无需注册，没有软件收费、充值或次数限制，不接收费 GPT API。
+
+**当前阶段：话术编辑、匹配测试、本地 AI 客户端和只读检测已实现；千牛 9.1907n 的真实收发适配尚未完成。自动回复按钮保持关闭。需要在用户 Windows 机器采集控件结构、验证消息身份后才能继续适配。当前程序不能直接替代原软件自动接待。**
+
+## 在 Windows 运行
+
+1. 安装 **Python 3.12，64 位**（含 Python Launcher，命令 `py -3.12` 可用）。
+2. 解压完整源码包，双击 `scripts\start_windows.bat`。首次运行会从 PyPI 安装依赖，需要联网；安装完成后话术功能可离线运行。
+3. 进入“话术规则”，手动新增或点击“载入示例”。双击规则可修改；可按店铺、分类、优先级、启用状态和收藏管理。
+4. “话术测试”输入买家消息，查看命中组和回复。普通预览不发送、不改变轮播进度。“模拟处理”使用临时数据库并明确标记为模拟，也不会发送到千牛。
+
+程序数据在 `%LOCALAPPDATA%\QianniuLocalAssistant\assistant.sqlite3`，不写入千牛安装目录。移除源码包不会清除这个数据文件。请用“导出 JSON”备份话术；导出不含聊天历史。
+
+源码启动有控制台窗口，便于显示安装错误。Windows 打包后可使用无控制台的 `QianniuLocalAssistant.exe`；本次 Linux 开发环境未执行 Windows 打包或实机验收，源码包不等于已验证的 exe。
+
+## 免费本地 AI
+
+1. 从 [Ollama 官方网站](https://ollama.com/download/windows) 安装 Windows 版并启动。
+2. 在终端执行 `ollama pull qwen2.5:3b` 下载中文模型。建议至少 8 GB 内存；内存较少可尝试 `qwen2.5:1.5b`。模型速度与回复质量取决于电脑配置。
+3. 在“本地 AI”保持地址 `http://127.0.0.1:11434`，点击“检测模型”，选择已安装的本地模型。
+4. 填写已核实的店铺资料，先测试问题；需要时再把未命中策略改为“本地 AI”并保存。
+
+AI 默认关闭，仅请求回环地址，不经系统代理，不自动调用云端或其他服务。带 cloud 标识、或模型元数据表明远端托管的模型会被拒绝；生成前先检查元数据，再提交问题。无需 API Key。首次下载模型需要网络，使用本地模型不产生 API 调用费。
+
+AI 对库存、时效和退款的答复仍可能出错；重要事项请配置已审核话术。“资料适用店铺”留空时保存通用资料，填写店铺名时单独保存该店资料；引擎优先读取该店专用资料。真实多店铺上线前仍需实机隔离验收。AI 检测/试答不连接千牛。
+
+## 关键词语法
+
+| 写法 | 含义 | 示例 |
+| --- | --- | --- |
+| `#` | 完整条件之间的或 | `你好#您好` |
+| `\|` | 同组词任选一个 | `发\|可\|能` |
+| `+` | 所有组都需命中，顺序不限 | `发\|可\|能+邮政` |
+| `&` | 前后组依次出现，不重叠 | `不要\|别发&中通\|圆通` |
+
+优先级：`|` > `&` > `+` > `#`。关键词不允许减号、括号、空组。完全匹配仅支持用 `#` 分隔候选句。先解析条件，再移除买家消息和词中的标点；保留空白、大小写，非模糊匹配。
+
+例如 `你好|您好+在吗|在么+东西|商品` 需要三个组都满足；“您好，在么？”不匹配。这是对原说明矛盾例子的明确解释。
+
+回复内容在编辑窗口中**每行一条**，支持正文中的字面 `#`；正式引擎仅在发送确认后推进轮播，预览及失败不推进。优先级数字小的先匹配；同值时店铺专用优先，再按创建顺序，每个事件只选一条规则。
+
+## 检测千牛 9.1907n
+
+启动并登录千牛，再进入本程序“千牛检测”运行检测；或双击 `scripts\diagnose_windows.bat`。后者把报告写到 `reports\qianniu-diagnostic.json`。
+
+默认报告不含控件名称/聊天正文，仅有平台、进程文件名、版本资源和 UIA 控件结构。勾选“包含控件名称”可能将聊天文字写入本机报告；请先自行检查再决定是否分享。程序不会自动上传报告。
+
+检测不会点击发送或改动千牛。即使发现窗口，报告仍显示 `live_ready=false`：尚未实现针对实机结构的消息读取及发送确认，不能用“找到了窗口”代替验收。后续按 [Windows 验收清单](docs/windows-validation.md) 完成接入。
+
+## Windows 打包
+
+在 Windows PowerShell 从项目根目录运行：
+
+```powershell
+.\scripts\build_windows.ps1
+```
+
+脚本在项目 `.venv` 安装固定依赖，运行完整测试，使用 PyInstaller 打包，并通过子进程检查打包后的诊断入口。输出 `dist\QianniuLocalAssistant-windows.zip`。整个文件夹需一起分发，不要只复制 exe。
+
+仓库也提供 GitHub Actions 的手动 `Windows build and tests` 工作流。需将代码保存到你自己的仓库后手动运行；本会话未上传代码、未执行工作流、未发布版本。
+
+## 开发和验证
+
+```bash
+python3.12 -m venv .venv
+# Windows: .venv\Scripts\python；Linux: .venv/bin/python
+.venv/bin/python -m pip install -r requirements-dev.txt
+.venv/bin/python -m pytest -q
+PYTHONPATH=src .venv/bin/python -m qianniu_assistant
+```
+
+无图形显示时可设置 `QT_QPA_PLATFORM=offscreen`。截图启动检查：
+
+```bash
+QT_QPA_PLATFORM=offscreen PYTHONPATH=src .venv/bin/python -m qianniu_assistant --data-dir /tmp/qianniu-smoke --screenshot /tmp/qianniu.png
+```
+
+测试覆盖规则、原子导入、本地 HTTP 协议、调度取消、去重、轮播、模拟隔离和桌面操作。受控服务测试不等于已在用户机器运行了真实 Ollama 模型。Linux 通过不等于千牛 Windows 接入通过。
