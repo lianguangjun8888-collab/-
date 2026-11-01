@@ -17,7 +17,12 @@ def collect_tree(root, children, describe, max_nodes=400, max_depth=6):
                 break
         if depth >= max_depth:
             result['depth_limit_reached'] = True
-            result['truncated'] = True
+            try:
+                sentinel = object()
+                result['truncated'] = result['truncated'] or next(iter(children(node)),sentinel) is not sentinel
+            except Exception as exc:
+                result['errors'].append(dict(stage='children',depth=depth,error_type=type(exc).__name__))
+                result['truncated'] = True
             continue
         try:
             for index, child in enumerate(children(node)):
@@ -43,6 +48,10 @@ def assess_windows(windows):
         status, action = 'native_children_found','发现原生子窗口，但还需确定聊天区域的访问方式；真实发送保持关闭。'
     elif any(w.get('uia_raw',{}).get('errors') for w in active):
         status, action = 'provider_error','辅助功能接口返回读取错误，不等于窗口没有子控件；请检查报告中的权限和错误类型。'
+    elif any(w.get('uia_raw',{}).get('status') == 'not_run' or not w.get('uia_raw',{}).get('controls') for w in active):
+        status, action = 'probe_incomplete','原始控件接口尚未完成读取，当前不能判断是否只有窗口外框。'
+    elif any(w.get('native_children',{}).get('errors') for w in active):
+        status, action = 'native_probe_error','原生子窗口枚举出现错误，不能把读取失败当作没有子窗口；请查看错误类型和权限状态。'
     else:
         status, action = 'root_only','仍只读取到窗口外框；请确认已打开客服接待中的买家会话。若状态无变化，当前接口不足以可靠自动回复。'
     return dict(status=status,next_action=action,live_ready=False)

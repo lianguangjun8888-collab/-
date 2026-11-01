@@ -10,6 +10,7 @@ def test_hung_probe_preserves_checkpoint_and_is_terminated(tmp_path):
  script="import json,time,pathlib; pathlib.Path(__import__('sys').argv[1]).write_text(json.dumps({'report_version':2,'live_ready':False,'windows':[{'handle':1}],'warnings':[]})); time.sleep(30)"
  report=supervise([sys.executable,'-c',script,str(output)],output,timeout=1)
  assert report['timed_out'] is True
+ assert report['assessment']['status']=='probe_incomplete'
  assert report['windows']==[{'handle':1}]
  assert not report['live_ready']
  assert report['warnings']

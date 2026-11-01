@@ -66,3 +66,22 @@ def test_target_process_filter_never_inspects_our_own_packaged_app():
  assert not matches_target('QianniuLocalAssistant.exe')
  assert not matches_target('AliWorkbenchHelper.exe')
  assert not matches_target('notepad.exe')
+
+
+def test_incomplete_uia_probe_is_not_reported_as_root_only():
+ windows=[{'visible':True,'minimized':False,'uia_raw':{'status':'not_run','controls':[],'errors':[]},'native_children':{'controls':[],'errors':[]}}]
+ result=assess_windows(windows)
+ assert result['status']=='probe_incomplete'
+ assert '尚未' in result['next_action']
+
+
+def test_native_failure_is_visible_in_assessment():
+ windows=[{'visible':True,'minimized':False,'uia_raw':{'status':'completed','controls':[{'depth':0}],'errors':[]},'native_children':{'controls':[],'errors':[{'error_type':'error'}]}}]
+ assert assess_windows(windows)['status']=='native_probe_error'
+
+
+def test_leaf_at_depth_limit_is_not_mistaken_for_truncation():
+ root=Node('r',[Node('leaf')])
+ result=collect_tree(root,lambda n:n.children,lambda n,d:{'depth':d},max_depth=1)
+ assert len(result['controls'])==2
+ assert not result['truncated']

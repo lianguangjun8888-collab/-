@@ -32,6 +32,10 @@ def supervise(command, output, timeout=25, env=None):
         report['partial'] = True
         report['live_ready'] = False
         report.setdefault('warnings',[]).append('检测超时，已终止探针并保留部分结果。' if timed_out else '检测进程异常退出，当前为部分结果。')
+        assessment = report.get('assessment',{})
+        if assessment.get('status') not in ('uia_descendants_found','native_children_found'):
+            assessment = dict(status='probe_incomplete',next_action='检测尚未完整结束，不能据此判断聊天控件是否存在。',live_ready=False)
+        report['assessment'] = dict(assessment,partial=True)
     return report
 
 
