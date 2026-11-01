@@ -13,7 +13,7 @@ class MatchResult:
 
 
 def normalize(text: str) -> str:
-    extra = set('×$~+=|*～')
+    extra = set('×$~+=|*～<>')
     return ''.join(c for c in text if not unicodedata.category(c).startswith('P') and c not in extra)
 
 

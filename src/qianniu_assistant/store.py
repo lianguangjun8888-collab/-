@@ -1,5 +1,6 @@
 """本地 SQLite 持久化；规则导入和发送确认分别保持原子性。"""
 from dataclasses import asdict
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -36,10 +37,15 @@ class Store:
             db.execute('DELETE FROM history WHERE created < ?', (cutoff,))
             db.execute('DELETE FROM events WHERE created < ?', (cutoff,))
 
+    @contextmanager
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10)
         db.row_factory = sqlite3.Row
-        return db
+        try:
+            with db:
+                yield db
+        finally:
+            db.close()
 
     def save_rule(self, rule):
         validate_rule(rule)

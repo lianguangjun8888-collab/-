@@ -32,3 +32,7 @@ def test_explanation():
 def test_rule_rejects_empty_answers_and_invalid_exact():
  for rule in [Rule(name='x',expression='a',replies=[]),Rule(name='x',expression='a|b',match_type='exact')]:
   with pytest.raises(ValueError): validate_rule(rule)
+
+
+def test_customer_angle_brackets_are_removed():
+ assert evaluate('你好','<你>好').matched

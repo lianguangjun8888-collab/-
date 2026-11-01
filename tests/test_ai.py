@@ -7,6 +7,8 @@ from qianniu_assistant.ai import AIClient, AIError
 
 def test_ollama_request_is_local_and_contains_shop_context():
  def respond(request):
+  if request.url.path=='/api/show':
+   return httpx.Response(200,json={'details':{'family':'qwen2'}})
   assert str(request.url)=='http://127.0.0.1:11434/api/chat'
   body=json.loads(request.content)
   assert body['stream'] is False
@@ -44,3 +46,15 @@ def test_timeout_and_model_detection():
  data={'models':[{'name':'qwen2.5:3b'},{'name':'deepseek:671b-cloud','remote_host':'https://ollama.com'}, {'name':'local-but-remote','remote_model':'x'}, {'bad':'value'}]}
  client=AIClient(transport=httpx.MockTransport(lambda r:httpx.Response(200,json=data)))
  assert asyncio.run(client.models())==['qwen2.5:3b']
+
+
+def test_remote_alias_rejected_before_sending_question():
+ paths=[]
+ def respond(request):
+  paths.append(request.url.path)
+  if request.url.path=='/api/show':
+   return httpx.Response(200,json={'remote_model':'large-model','remote_host':'https://ollama.com'})
+  return httpx.Response(200,json={'message':{'content':'bad'},'done':True})
+ client=AIClient(model='alias',transport=httpx.MockTransport(respond))
+ with pytest.raises(AIError): asyncio.run(client.reply('private question'))
+ assert paths==['/api/show']
