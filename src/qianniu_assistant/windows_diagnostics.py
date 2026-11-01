@@ -34,11 +34,88 @@ def _versions(api, exe):
     return result
 
 
-def _raw_tree(hwnd, include_names):
+def prioritize_windows(handles, is_visible, is_minimized):
+    def rank(handle):
+        try:
+            return (not bool(is_visible(handle)),bool(is_minimized(handle)))
+        except Exception:
+            return (True,True)
+    return sorted(handles,key=rank)
+
+
+def select_renderers(controls, limit=4):
+    unique = {}
+    for node in controls:
+        if node.get('class_name') != 'Chrome_RenderWidgetHostHWND' or not node.get('visible'):
+            continue
+        rect = node.get('rect',[])
+        if len(rect) != 4 or rect[2] <= rect[0] or rect[3] <= rect[1]:
+            continue
+        unique.setdefault(node['handle'],node)
+    return sorted(unique.values(),key=lambda n:(n['rect'][2]-n['rect'][0])*(n['rect'][3]-n['rect'][1]),reverse=True)[:limit]
+
+
+def describe_element(element, ui, depth, include_names):
+    result = dict(depth=depth,control_type=ui.known_control_type_ids.get(element.CurrentControlType,'Unknown'),
+                  class_name=(element.CurrentClassName or '')[:256],automation_id=(element.CurrentAutomationId or '')[:256],
+                  framework_id=(element.CurrentFrameworkId or '')[:80],offscreen=bool(element.CurrentIsOffscreen))
+    for key, attribute in [('native_handle','CurrentNativeWindowHandle'),('process_id','CurrentProcessId'),('is_password','CurrentIsPassword')]:
+        try:
+            result[key] = getattr(element,attribute)
+            if key == 'is_password' and result[key] is not None:
+                result[key] = bool(result[key])
+        except Exception:
+            result[key] = None
+    try:
+        result['runtime_id'] = list(element.GetRuntimeId() or [])[:32]
+    except Exception:
+        result['runtime_id'] = None
+    try:
+        rect = element.CurrentBoundingRectangle
+        result['rect'] = [rect.left,rect.top,rect.right,rect.bottom]
+    except Exception:
+        result['rect'] = None
+    patterns = {}
+    for name in ('Value','Text','Invoke','LegacyIAccessible'):
+        try:
+            prop = getattr(ui.UIA_dll,'UIA_Is'+name+'PatternAvailablePropertyId')
+            patterns[name] = bool(element.GetCurrentPropertyValue(prop))
+        except Exception:
+            patterns[name] = None
+    result['patterns_available'] = patterns
+    if include_names and result['is_password'] is not True:
+        result['name'] = (element.CurrentName or '')[:300]
+    return result
+
+
+def _raw_tree(hwnd, include_names, max_nodes=400, max_depth=8, targeted=False, deadline=None, on_progress=None):
     from pywinauto.uia_defines import IUIA
     ui = IUIA()
     walker = ui.iuia.RawViewWalker
     root = ui.iuia.ElementFromHandle(hwnd)
+    candidates = dict(input_candidates=[],button_candidates=[],candidate_errors=[])
+    if targeted:
+        # Search editable controls before traversing long chat history, so a
+        # large history subtree cannot exhaust the budget before the editor.
+        for kind, destination in [('Edit','input_candidates'),('Button','button_candidates')]:
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            try:
+                condition = ui.iuia.CreatePropertyCondition(ui.UIA_dll.UIA_ControlTypePropertyId,ui.known_control_types[kind])
+                elements = root.FindAll(ui.tree_scope['descendants'],condition)
+                for i in range(min(elements.Length,100)):
+                    if deadline is not None and time.monotonic() >= deadline:
+                        candidates[destination+'_truncated'] = True
+                        break
+                    node = describe_element(elements.GetElement(i),ui,None,include_names)
+                    if node['is_password'] is not True and not node['offscreen']:
+                        candidates[destination].append(node)
+                if elements.Length > 100:
+                    candidates[destination+'_truncated'] = True
+            except Exception as exc:
+                candidates['candidate_errors'].append(dict(control_type=kind,error_type=type(exc).__name__))
+            if on_progress:
+                on_progress(dict(candidates,controls=[],errors=[],status='collecting'))
     def children(element):
         child = walker.GetFirstChildElement(element)
         count = 0
@@ -46,22 +123,9 @@ def _raw_tree(hwnd, include_names):
             yield child
             child = walker.GetNextSiblingElement(child)
             count += 1
-    def describe(element, depth):
-        result = dict(depth=depth,control_type=ui.known_control_type_ids.get(element.CurrentControlType,'Unknown'),
-                      class_name=element.CurrentClassName or '',automation_id=element.CurrentAutomationId or '',
-                      framework_id=element.CurrentFrameworkId or '',offscreen=bool(element.CurrentIsOffscreen))
-        patterns = {}
-        for name in ('Value','Text','Invoke','LegacyIAccessible'):
-            try:
-                prop = getattr(ui.UIA_dll,'UIA_Is'+name+'PatternAvailablePropertyId')
-                patterns[name] = bool(element.GetCurrentPropertyValue(prop))
-            except Exception:
-                patterns[name] = None
-        result['patterns_available'] = patterns
-        if include_names:
-            result['name'] = (element.CurrentName or '')[:300]
-        return result
-    return collect_tree(root,children,describe)
+    tree = collect_tree(root,children,lambda e,d:describe_element(e,ui,d,include_names),
+                        max_nodes=max_nodes,max_depth=max_depth,with_paths=True,deadline=deadline)
+    return dict(tree,**candidates)
 
 
 def collect_windows(include_names=False, on_window=None, max_seconds=18):
@@ -70,13 +134,17 @@ def collect_windows(include_names=False, on_window=None, max_seconds=18):
     import win32process
     import win32security
     started = time.monotonic()
+    deadline = started + max_seconds
     cache = {}
     windows = []
     admin = bool(ctypes.windll.shell32.IsUserAnAdmin())
     handles = []
     scanned = 0
     truncated = False
+    renderer_budget = 6
+    renderers_scanned = 0
     win32gui.EnumWindows(lambda h,_:handles.append(h) or True,None)
+    handles = prioritize_windows(handles,win32gui.IsWindowVisible,win32gui.IsIconic)
     for hwnd in handles[:1000]:
         if time.monotonic()-started > max_seconds or len(windows) >= 20:
             truncated = True
@@ -109,7 +177,7 @@ def collect_windows(include_names=False, on_window=None, max_seconds=18):
             entry = dict(cache[pid],handle=int(hwnd),visible=bool(win32gui.IsWindowVisible(hwnd)),
                          minimized=bool(win32gui.IsIconic(hwnd)),inspector_elevated=admin,
                          native_children=dict(controls=[],errors=[],truncated=False),
-                         uia_raw=dict(controls=[],errors=[],status='not_run'))
+                         renderers=[],uia_raw=dict(controls=[],errors=[],status='not_run'))
             windows.append(entry)
             def native(child,_):
                 result = entry['native_children']
@@ -126,17 +194,55 @@ def collect_windows(include_names=False, on_window=None, max_seconds=18):
                 except Exception as exc:
                     result['errors'].append(dict(error_type=type(exc).__name__))
                 return True
-            try:
-                win32gui.EnumChildWindows(hwnd,native,None)
-            except Exception as exc:
-                if not entry['native_children']['truncated']:
-                    entry['native_children']['errors'].append(dict(error_type=type(exc).__name__))
+            if entry['visible'] and not entry['minimized']:
+                try:
+                    win32gui.EnumChildWindows(hwnd,native,None)
+                except Exception as exc:
+                    if not entry['native_children']['truncated']:
+                        entry['native_children']['errors'].append(dict(error_type=type(exc).__name__))
+            else:
+                entry['native_children']['status'] = 'skipped_hidden_or_minimized'
             # Save native progress before querying a possibly unresponsive provider.
             if on_window:
                 on_window(entry)
             if not entry['visible'] or entry['minimized']:
                 entry['uia_raw']['status'] = 'skipped_hidden_or_minimized'
             else:
+                # Probe large, visible Chromium renderers directly. Do not
+                # spend the depth allowance climbing through the Qt shell.
+                for renderer in select_renderers(entry['native_children']['controls']):
+                    if renderer_budget <= 0 or time.monotonic() >= deadline:
+                        entry['renderers_truncated'] = True
+                        truncated = True
+                        break
+                    renderer_budget -= 1
+                    renderers_scanned += 1
+                    probe = dict(handle=renderer['handle'],rect=renderer['rect'],
+                                 uia_raw=dict(status='not_run',controls=[],errors=[]))
+                    entry['renderers'].append(probe)
+                    if on_window:
+                        on_window(entry)
+                    def progress(data, probe=probe):
+                        probe['uia_raw'] = data
+                        if on_window:
+                            on_window(entry)
+                    try:
+                        win32gui.SendMessageTimeout(renderer['handle'],0x003D,0,-25,0x0003,1000)
+                    except Exception as exc:
+                        probe['accessibility_request'] = type(exc).__name__
+                    try:
+                        probe['uia_raw'] = dict(_raw_tree(renderer['handle'],include_names,max_nodes=1200,max_depth=32,
+                            targeted=True,deadline=min(deadline,time.monotonic()+5),on_progress=progress),status='completed')
+                    except Exception as exc:
+                        probe['uia_raw'] = dict(status='failed',controls=[],errors=[dict(stage='root',error_type=type(exc).__name__)])
+                    if on_window:
+                        on_window(entry)
+                if time.monotonic() >= deadline:
+                    entry['uia_raw']['status'] = 'skipped_budget'
+                    truncated = True
+                    if on_window:
+                        on_window(entry)
+                    continue
                 try:
                     # UiaRootObjectId=-25. SMTO_ABORTIFHUNG|SMTO_BLOCK, 1 second.
                     win32gui.SendMessageTimeout(hwnd,0x003D,0,-25,0x0003,1000)
@@ -144,7 +250,7 @@ def collect_windows(include_names=False, on_window=None, max_seconds=18):
                 except Exception as exc:
                     entry['accessibility_request'] = type(exc).__name__
                 try:
-                    entry['uia_raw'] = dict(_raw_tree(hwnd,include_names),status='completed')
+                    entry['uia_raw'] = dict(_raw_tree(hwnd,include_names,deadline=deadline),status='completed')
                 except Exception as exc:
                     entry['uia_raw'] = dict(controls=[],errors=[dict(stage='root',error_type=type(exc).__name__)],status='failed')
             if on_window:
@@ -153,4 +259,5 @@ def collect_windows(include_names=False, on_window=None, max_seconds=18):
             # Inaccessible unrelated windows must not abort the whole inventory.
             continue
     return dict(windows=windows,scan=dict(windows_scanned=scanned,truncated=truncated or len(handles)>1000,
+                                        renderer_roots_scanned=renderers_scanned,
                                         elapsed_seconds=round(time.monotonic()-started,2)))

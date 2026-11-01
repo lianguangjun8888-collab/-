@@ -1,4 +1,4 @@
-"""版本 2 的只读诊断；发现窗口不等于自动回复已经可用。"""
+"""版本 3 的聊天区域只读诊断；控件候选不等于真实自动回复已验收。"""
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -9,14 +9,15 @@ from .diagnostic_tree import assess_windows
 
 
 def diagnose(include_names=False, on_progress=None):
-    result = {'report_version':2,'target_version':'9.1907n','target_display_version':'9.19.07N (1686)',
+    result = {'report_version':3,'target_version':'9.1907n','target_display_version':'9.19.07N (1686)',
               'platform':platform.platform(),
               'python':platform.python_version(),'python_bits':struct.calcsize('P')*8,
               'created':datetime.now(timezone.utc).isoformat(),
               'live_ready':False,'version_verified':False,'windows':[], 'warnings':[],
               'capabilities':dict.fromkeys(['shop_identity','conversation_identity','message_events',
                                           'direction','draft_state','send_confirmation'],False),
-              'capabilities_note':'这些能力尚未通过验收；false 不代表已逐项测试并确认不存在。'}
+              'capabilities_note':'这些能力尚未通过验收；false 不代表已逐项测试并确认不存在。',
+              'identity_note':'控件 path 和 runtime_id 仅用于观察；尚未证明是稳定的店铺、会话或买家消息标识。'}
     if on_progress:
         on_progress(result)
     if sys.platform != 'win32':

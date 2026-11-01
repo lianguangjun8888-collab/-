@@ -23,7 +23,7 @@ def test_diagnostic_child_writes_utf8_report_without_stdout(tmp_path):
  assert proc.stdout==b''
 
 
-def test_v2_checkpoints_do_not_duplicate_windows_or_claim_readiness(monkeypatch):
+def test_v3_checkpoints_do_not_duplicate_windows_or_claim_readiness(monkeypatch):
  from copy import deepcopy
  from types import SimpleNamespace
  import qianniu_assistant.diagnostics as diagnostic
@@ -38,7 +38,7 @@ def test_v2_checkpoints_do_not_duplicate_windows_or_claim_readiness(monkeypatch)
  monkeypatch.setattr(native,'collect_windows',collect)
  saved=[]
  report=diagnostic.diagnose(on_progress=lambda data:saved.append(deepcopy(data)))
- assert report['report_version']==2
+ assert report['report_version']==3
  assert report['assessment']['status']=='uia_descendants_found'
  assert not report['live_ready'] and not report['version_verified']
  assert len(report['windows'])==1

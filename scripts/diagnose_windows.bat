@@ -11,9 +11,10 @@ set PYTHONUTF8=1
 set "PYTHONPATH=%CD%\src"
 if not exist reports mkdir reports
 echo.
-echo 增强检测 v2：请先打开千牛“客服接待”，进入一个买家会话并保持窗口可见。
+echo 聊天区域检测 v3：请先打开千牛“客服接待”，进入一个买家会话并保持窗口可见。
 echo 请关闭“关于千牛”等遮挡聊天的窗口。本检测不会发消息，也不默认读取聊天正文。
 echo 准备好后按任意键开始检测，最长约 25 秒；卡住时会保留已采集的部分结果。
+echo 本次会优先检查可见窗口，单独深入网页聊天区域，并查找编辑框和按钮候选。
 pause >nul
 ".venv\Scripts\python.exe" -m qianniu_assistant --diagnose --output reports\qianniu-diagnostic.json
 if errorlevel 1 (

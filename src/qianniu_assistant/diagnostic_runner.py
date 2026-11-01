@@ -20,10 +20,10 @@ def supervise(command, output, timeout=25, env=None):
         timed_out = True
     output = Path(output)
     try:
-        if not output.is_file() or output.stat().st_size > 5_000_000:
+        if not output.is_file() or output.stat().st_size > 20_000_000:
             raise ValueError('missing or oversized report')
         report = json.loads(output.read_text(encoding='utf-8'))
-        if not isinstance(report,dict) or report.get('report_version') != 2:
+        if not isinstance(report,dict) or report.get('report_version') not in (2,3):
             raise ValueError('invalid report format')
     except (ValueError,OSError):
         raise RuntimeError('检测未产生有效报告，请确认检测依赖已安装，或检查当前程序的运行权限。') from None
@@ -33,7 +33,7 @@ def supervise(command, output, timeout=25, env=None):
         report['live_ready'] = False
         report.setdefault('warnings',[]).append('检测超时，已终止探针并保留部分结果。' if timed_out else '检测进程异常退出，当前为部分结果。')
         assessment = report.get('assessment',{})
-        if assessment.get('status') not in ('uia_descendants_found','native_children_found'):
+        if assessment.get('status') not in ('uia_descendants_found','native_children_found','input_candidates_found'):
             assessment = dict(status='probe_incomplete',next_action='检测尚未完整结束，不能据此判断聊天控件是否存在。',live_ready=False)
         report['assessment'] = dict(assessment,partial=True)
     return report

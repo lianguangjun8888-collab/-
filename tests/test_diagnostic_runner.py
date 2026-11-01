@@ -26,3 +26,10 @@ def test_completed_probe_report_remains_complete(tmp_path):
 def test_bad_probe_is_not_reported_as_success(tmp_path):
  import pytest
  with pytest.raises(RuntimeError): supervise([sys.executable,'-c','raise SystemExit(2)'],tmp_path/'missing.json',timeout=5)
+
+
+def test_bounded_deep_report_larger_than_legacy_limit_is_accepted(tmp_path):
+ output=tmp_path/'report.json'
+ script="import json,pathlib,sys; pathlib.Path(sys.argv[1]).write_text(json.dumps({'report_version':3,'live_ready':False,'windows':[],'warnings':[],'metadata':'x'*5500000}))"
+ report=supervise([sys.executable,'-c',script,str(output)],output,timeout=5)
+ assert report['report_version']==3 and len(report['metadata'])==5500000
