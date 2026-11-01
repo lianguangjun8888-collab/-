@@ -43,7 +43,7 @@ def prioritize_windows(handles, is_visible, is_minimized):
     return sorted(handles,key=rank)
 
 
-def select_renderers(controls, limit=4):
+def select_renderers(controls, limit=None):
     unique = {}
     for node in controls:
         if node.get('class_name') != 'Chrome_RenderWidgetHostHWND' or not node.get('visible'):
@@ -52,7 +52,8 @@ def select_renderers(controls, limit=4):
         if len(rect) != 4 or rect[2] <= rect[0] or rect[3] <= rect[1]:
             continue
         unique.setdefault(node['handle'],node)
-    return sorted(unique.values(),key=lambda n:(n['rect'][2]-n['rect'][0])*(n['rect'][3]-n['rect'][1]),reverse=True)[:limit]
+    ordered = sorted(unique.values(),key=lambda n:(n['rect'][2]-n['rect'][0])*(n['rect'][3]-n['rect'][1]),reverse=True)
+    return ordered if limit is None else ordered[:limit]
 
 
 def describe_element(element, ui, depth, include_names):
@@ -83,7 +84,7 @@ def describe_element(element, ui, depth, include_names):
         except Exception:
             patterns[name] = None
     result['patterns_available'] = patterns
-    if include_names and result['is_password'] is not True:
+    if include_names and result['is_password'] is False:
         result['name'] = (element.CurrentName or '')[:300]
     return result
 
@@ -108,7 +109,7 @@ def _raw_tree(hwnd, include_names, max_nodes=400, max_depth=8, targeted=False, d
                         candidates[destination+'_truncated'] = True
                         break
                     node = describe_element(elements.GetElement(i),ui,None,include_names)
-                    if node['is_password'] is not True and not node['offscreen']:
+                    if node['is_password'] is False and not node['offscreen']:
                         candidates[destination].append(node)
                 if elements.Length > 100:
                     candidates[destination+'_truncated'] = True
@@ -210,7 +211,12 @@ def collect_windows(include_names=False, on_window=None, max_seconds=18):
             else:
                 # Probe large, visible Chromium renderers directly. Do not
                 # spend the depth allowance climbing through the Qt shell.
-                for renderer in select_renderers(entry['native_children']['controls']):
+                eligible = select_renderers(entry['native_children']['controls'])
+                entry['renderers_eligible'] = len(eligible)
+                entry['renderers_truncated'] = len(eligible) > 4
+                if entry['renderers_truncated']:
+                    truncated = True
+                for renderer in eligible[:4]:
                     if renderer_budget <= 0 or time.monotonic() >= deadline:
                         entry['renderers_truncated'] = True
                         truncated = True

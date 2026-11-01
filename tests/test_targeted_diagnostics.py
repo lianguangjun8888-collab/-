@@ -1,3 +1,4 @@
+import pytest
 from qianniu_assistant.windows_diagnostics import prioritize_windows, select_renderers, describe_element
 from qianniu_assistant.diagnostic_tree import collect_tree, assess_windows
 
@@ -66,7 +67,8 @@ def test_targeted_edit_candidates_do_not_claim_live_ready():
  assert not result['live_ready']
 
 
-def test_real_collector_prioritizes_chat_and_probes_renderers(monkeypatch):
+@pytest.mark.parametrize('renderer_count',[1,5])
+def test_real_collector_prioritizes_chat_and_probes_renderers(monkeypatch,renderer_count):
  import sys
  from copy import deepcopy
  from types import SimpleNamespace as NS
@@ -79,8 +81,9 @@ def test_real_collector_prioritizes_chat_and_probes_renderers(monkeypatch):
  def enum_windows(callback,arg):
   for h in list(range(1,26))+[100]: callback(h,arg)
  def enum_children(hwnd,callback,arg):
-  if hwnd==100: callback(200,arg)
- gui=NS(EnumWindows=enum_windows,EnumChildWindows=enum_children,IsWindowVisible=lambda h:h in (100,200),
+  if hwnd==100:
+   for child in range(200,200+renderer_count): callback(child,arg)
+ gui=NS(EnumWindows=enum_windows,EnumChildWindows=enum_children,IsWindowVisible=lambda h:h==100 or 200<=h<200+renderer_count,
         IsIconic=lambda h:False,GetParent=lambda h:100,GetClassName=lambda h:'Chrome_RenderWidgetHostHWND',
         IsWindowEnabled=lambda h:True,GetWindowRect=lambda h:(0,0,1200,800),SendMessageTimeout=lambda *a:(1,0))
  security=NS(OpenProcessToken=lambda *a:Handle(),GetTokenInformation=lambda *a:0,TokenElevation=20)
@@ -88,7 +91,7 @@ def test_real_collector_prioritizes_chat_and_probes_renderers(monkeypatch):
   monkeypatch.setitem(sys.modules,name,value)
  monkeypatch.setattr(native.ctypes,'windll',NS(shell32=NS(IsUserAnAdmin=lambda:False)),raising=False)
  def raw(hwnd,include_names,**kwargs):
-  if hwnd==200:
+  if hwnd>=200:
    root={'type':'Document','children':[]}; current=root
    for i in range(15):
     child={'type':'Group','children':[]}; current['children'].append(child); current=child
@@ -101,6 +104,8 @@ def test_real_collector_prioritizes_chat_and_probes_renderers(monkeypatch):
  result=native.collect_windows(on_window=lambda entry:checkpoints.append(deepcopy(entry)))
  chat=result['windows'][0]
  assert chat['handle']==100
+ assert len(chat['renderers'])==min(renderer_count,4)
+ assert chat.get('renderers_truncated',False) is (renderer_count>4)
  renderer=chat['renderers'][0]
  assert any(n['control_type']=='Edit' for n in renderer['uia_raw']['controls'])
  assert checkpoints and checkpoints[0]['handle']==100
@@ -128,8 +133,9 @@ def test_raw_candidate_query_preserves_early_progress_and_privacy(monkeypatch):
  normal=Item('editor',50004)
  password=Item('password',50004,password=True)
  hidden=Item('hidden',50004,offscreen=True)
+ unknown=Item('unknown',50004,password=None)
  send=Item('button',50000)
- root=Item('document',50030,[normal,password,hidden,send])
+ root=Item('document',50030,[normal,password,hidden,unknown,send])
  parent={id(n):root for n in root.children}
  def sibling(n):
   nodes=parent[id(n)].children; index=nodes.index(n)
@@ -147,3 +153,13 @@ def test_raw_candidate_query_preserves_early_progress_and_privacy(monkeypatch):
  assert [n['automation_id'] for n in result['button_candidates']]==['button']
  assert saved[0]['controls']==[] and saved[0]['input_candidates']
  assert all('name' not in n for n in result['controls'])
+
+
+def test_unknown_password_state_does_not_read_name():
+ class Unknown(Element):
+  @property
+  def CurrentIsPassword(self): raise OSError('provider unavailable')
+  CurrentName='private label'
+ node=describe_element(Unknown(),UI(),0,True)
+ assert node['is_password'] is None
+ assert 'name' not in node
