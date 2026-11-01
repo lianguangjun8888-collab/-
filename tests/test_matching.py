@@ -36,3 +36,8 @@ def test_rule_rejects_empty_answers_and_invalid_exact():
 
 def test_customer_angle_brackets_are_removed():
  assert evaluate('你好','<你>好').matched
+
+
+@pytest.mark.parametrize('expression',['。 。','a+！ ！','你好|。 。'])
+def test_normalized_whitespace_leaf_is_invalid(expression):
+ with pytest.raises(ValueError): evaluate(expression,'随便 什么')

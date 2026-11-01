@@ -8,7 +8,7 @@ from qianniu_assistant.ui import MainWindow, RuleDialog
 
 def test_rule_editor_rejects_bad_rule_then_saves_roundtrip(app,tmp_path):
  s=Store(tmp_path/'x.db'); d=RuleDialog(s)
- d.name.setText('问候'); d.expression.setText('你好++您好'); d.replies.setPlainText('在的\n您好')
+ d.name.setText('问候'); d.expression.setText('你好++您好'); d.replies.setPlainText('在的'); d.add_reply(); d.replies.setPlainText('您好')
  d.save()
  assert d.error.text() and s.rules()==[]
  d.expression.setText('你好#您好'); d.save()
@@ -53,7 +53,9 @@ def test_add_button_and_settings_persist_without_enabling_live(app,tmp_path):
 def test_editor_does_not_silently_discard_excess_replies(app,tmp_path):
  s=Store(tmp_path/'x.db'); d=RuleDialog(s)
  d.name.setText('多回复'); d.expression.setText('你好')
- d.replies.setPlainText('\n'.join(f'回复 {i}' for i in range(101)))
+ for i in range(101):
+  if i: d.add_reply()
+  d.replies.setPlainText(f'回复 {i}')
  d.save()
  assert s.rules()==[] and d.error.text()
 
@@ -73,3 +75,9 @@ def test_detect_models_can_be_retried_when_none_installed(app,tmp_path,monkeypat
  assert w.jobs, '检测模型应可再次启动，不被空模型名阻止'
  while w.jobs and time.monotonic()<deadline+3: app.processEvents(); QTest.qWait(5)
  w.close()
+
+
+def test_editing_name_preserves_multiline_reply(app,tmp_path):
+ s=Store(tmp_path/'x.db'); r=Rule(name='多行',expression='你好',replies=['第一行\n第二行','其他回复'])
+ s.save_rule(r); d=RuleDialog(s,r); d.name.setText('新名称'); d.save()
+ assert s.rules()[0].replies==['第一行\n第二行','其他回复']

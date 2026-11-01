@@ -23,6 +23,7 @@ class Coordinator:
         self.shops = set()
         self.paused = set()
         self.epoch = 0
+        self.shop_epochs = {}
         self.revisions = {}
         self.controls = {}
         self.ai_tasks = {}
@@ -42,7 +43,14 @@ class Coordinator:
             self.shops.add(shop)
         else:
             self.shops.discard(shop)
-        self.epoch += 1
+        self.shop_epochs[shop] = self.shop_epochs.get(shop, 0) + 1
+        if not value:
+            for key, task in list(self.ai_tasks.items()):
+                if key[0] == shop:
+                    task.cancel()
+            for key in list(self.pending):
+                if key[0] == shop:
+                    del self.pending[key]
 
     def takeover(self, shop, conversation):
         key = (shop, conversation)
@@ -58,7 +66,7 @@ class Coordinator:
         self.controls[key] = self.controls.get(key, 0) + 1
 
     def _gate(self, event):
-        return self.epoch, self.controls.get((event.shop,event.conversation), 0)
+        return self.epoch, self.shop_epochs.get(event.shop,0), self.controls.get((event.shop,event.conversation), 0)
 
     def _allowed(self, event, gate):
         return (self.enabled and event.shop in self.shops and

@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0.."
-call scripts\prepare_windows.bat
+call scripts\prepare_windows.bat diagnostics
 if errorlevel 1 (
     pause
     exit /b 1

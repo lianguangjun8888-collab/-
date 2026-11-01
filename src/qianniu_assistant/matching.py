@@ -34,7 +34,7 @@ def parse(expression: str, match_type: str = 'contains'):
             ordered = []
             for step in group.split('&'):
                 words = [normalize(w.strip()) for w in step.split('|')]
-                if any(not w for w in words):
+                if any(not w.strip() for w in words):
                     raise ValueError('运算符两侧必须有有效关键词')
                 ordered.append(tuple(words))
             conjunction.append(tuple(ordered))

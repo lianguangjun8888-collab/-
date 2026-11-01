@@ -139,6 +139,7 @@ class Store:
         return row[0] if row else 0
 
     def record(self, shop, conversation, event_id, message, reply, status, rule_id=''):
+        self.prune()
         keep = self.settings()['record_body']
         with self.connect() as db:
             cur = db.execute('INSERT OR IGNORE INTO history (shop,conversation,event_id,message,reply,status,rule_id,created) VALUES (?,?,?,?,?,?,?,?)',
@@ -147,8 +148,15 @@ class Store:
                 db.execute('INSERT INTO cursors VALUES (?,?,1) ON CONFLICT(shop,rule_id) DO UPDATE SET position=position+1', (shop,rule_id))
 
     def history(self, limit=500):
+        self.prune()
         with self.connect() as db:
             return [dict(r) for r in db.execute('SELECT * FROM history ORDER BY id DESC LIMIT ?', (limit,))]
+
+    def prune(self):
+        cutoff = (datetime.now(timezone.utc)-timedelta(days=30)).isoformat()
+        with self.connect() as db:
+            db.execute('DELETE FROM history WHERE created < ?', (cutoff,))
+            db.execute('DELETE FROM events WHERE created < ?', (cutoff,))
 
     def clear_history(self):
         with self.connect() as db:

@@ -2,7 +2,7 @@
 from dataclasses import replace
 import json
 from pathlib import Path
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt,QTimer
 from PySide6.QtWidgets import (QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QLabel,QPushButton,
     QListWidget,QStackedWidget,QTableWidget,QTableWidgetItem,QHeaderView,QLineEdit,QComboBox,
     QPlainTextEdit,QFormLayout,QCheckBox,QFileDialog,QMessageBox,QAbstractItemView)
@@ -47,7 +47,7 @@ class MainWindow(QMainWindow):
         left = QVBoxLayout(sidebar); left.setContentsMargins(8,20,8,16)
         left.addWidget(label('千牛本地助手','brand'))
         self.nav = QListWidget(); self.nav.setObjectName('nav')
-        self.nav.addItems(['工作概览','话术规则','话术测试','本地 AI','回复历史','千牛检测'])
+        self.nav.addItems(['工作概览','话术规则','话术测试','回复设置','回复历史','千牛检测'])
         left.addWidget(self.nav)
         footer = label('自用免费 · 数据保存在本机\n目标版本：千牛 9.1907n'); footer.setStyleSheet('color:#91a9c8;padding:8px;')
         left.addWidget(footer); outer.addWidget(sidebar)
@@ -57,6 +57,10 @@ class MainWindow(QMainWindow):
         self.nav.setCurrentRow(0)
         self.statusBar().showMessage('已暂停真实收发 · 话术编辑与本地测试可用')
         self.refresh()
+        self.retention_timer = QTimer(self)
+        self.retention_timer.setInterval(60*60*1000)
+        self.retention_timer.timeout.connect(self.refresh_history)
+        self.retention_timer.start()
 
     def _page(self, title, subtitle):
         page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(28,26,28,24); layout.setSpacing(16)
@@ -65,14 +69,14 @@ class MainWindow(QMainWindow):
         return layout
 
     def _overview(self):
-        layout = self._page('工作概览','关键词话术优先，本地 AI 补充。无需注册，无充值和次数限制。')
+        layout = self._page('工作概览','按关键词回复固定话术，也可设置统一回复。无需注册、充值或安装 AI 模型。')
         self.connection = label('千牛连接：未验证','badge'); layout.addWidget(self.connection)
         row = QHBoxLayout()
         self.rule_count = label('0\n话术规则','card'); self.enabled_count = label('0\n启用规则','card')
         self.history_count = label('0\n处理记录','card')
         for card in (self.rule_count,self.enabled_count,self.history_count): row.addWidget(card)
         layout.addLayout(row)
-        layout.addWidget(label('真实自动回复尚未开放：需要在 Windows 千牛 9.1907n 上确认消息身份、目标会话和发送结果。当前不会向千牛发送消息。','notice'))
+        layout.addWidget(label('真实自动回复尚未开放：需要先在您的 Windows 千牛 9.1907n 上完成连接测试。当前可编辑、测试话术，尚不会向千牛发送消息。','notice'))
         controls = QHBoxLayout()
         self.live_start = button('开启千牛自动回复',lambda:None); self.live_start.setEnabled(False)
         self.live_start.setToolTip('实机收发适配通过验收后才可开启')
@@ -125,8 +129,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(label('语法：# 完整条件或　| 组内或　+ 各组都满足　& 依次出现\n例：不要|别发&中通|圆通 → “不要发中通”命中，“中通不要发”不命中。','subtitle'))
 
     def _ai_page(self):
-        layout = self._page('本地免费 AI','使用电脑上的 Ollama，无 API Key、充值或按次计费。首次下载模型需要网络。')
-        layout.addWidget(label('AI 默认关闭。先安装 Ollama 并下载本地模型，再点击“检测模型”和“测试 AI”。不使用带 cloud 标识的云模型。','notice'))
+        layout = self._page('回复设置','固定话术不需要 AI；本地 AI 为可选功能，默认关闭。')
+        layout.addWidget(label('使用固定文字时，无需安装 Ollama、下载模型或填写店铺资料。只需设置关键词和对应回复；所有消息回同一句可开启“最简模式”。','notice'))
         cfg = self.store.settings(); form = QFormLayout()
         self.fallback = QComboBox()
         for text,value in [('未匹配不回复','none'),('未匹配用固定回复','default'),('未匹配用本地 AI','ai')]: self.fallback.addItem(text,value)
@@ -175,7 +179,7 @@ class MainWindow(QMainWindow):
         self.export_report_button = button('保存检测报告',self.export_report,True); self.export_report_button.setEnabled(False); row.addWidget(self.export_report_button)
         row.addStretch(); layout.addLayout(row)
         self.diagnostic_output = QPlainTextEdit(); self.diagnostic_output.setReadOnly(True); layout.addWidget(self.diagnostic_output,1)
-        layout.addWidget(label('本机模型安装：安装 Ollama → 执行 ollama pull qwen2.5:3b → 保持 Ollama 运行 → 本地 AI 页检测模型。\n千牛实测需依次确认店铺身份、会话身份、新买家消息、草稿状态和发送确认。','subtitle'))
+        layout.addWidget(label('本机模型安装：安装 Ollama → 执行 ollama pull qwen2.5:3b → 保持 Ollama 运行 → 回复设置页检测模型（可选）。\n千牛实测需依次确认店铺身份、会话身份、新买家消息、草稿状态和发送确认。','subtitle'))
 
     def refresh(self):
         self.refresh_rules(); self.refresh_history()

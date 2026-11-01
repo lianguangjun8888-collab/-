@@ -9,6 +9,13 @@ if not exist ".venv\Scripts\python.exe" (
         exit /b 1
     )
 )
+if "%~1"=="diagnostics" (
+    ".venv\Scripts\python.exe" -c "import pywinauto" >nul 2>nul
+    if not errorlevel 1 exit /b 0
+    ".venv\Scripts\python.exe" -m pip install --disable-pip-version-check pywinauto==0.6.9
+    if errorlevel 1 exit /b 1
+    exit /b 0
+)
 ".venv\Scripts\python.exe" -c "from importlib.metadata import version; assert version('PySide6')=='6.8.3'; assert version('httpx')=='0.28.1'; import pywinauto; from PySide6 import QtWidgets" >nul 2>nul
 if not errorlevel 1 exit /b 0
 ".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements.txt

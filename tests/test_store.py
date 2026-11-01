@@ -76,3 +76,12 @@ def test_shop_ai_profiles_are_isolated_and_validated(tmp_path):
  assert s.settings()['shop_infos']['乙']=='乙店商品'
  with pytest.raises(ValueError): s.set_settings({'shop_infos':{'甲':['invalid']}})
  assert s.settings()['shop_infos']['甲']=='甲店商品'
+
+
+def test_long_running_store_prunes_expired_history_without_restart(tmp_path):
+ s=Store(tmp_path/'x.db'); s.record('甲','客','e','旧消息','旧回复','error')
+ with s.connect() as db:
+  db.execute("UPDATE history SET created='2000-01-01T00:00:00+00:00'")
+ assert s.history()==[]
+ with s.connect() as db:
+  assert db.execute('SELECT count(*) FROM history').fetchone()[0]==0

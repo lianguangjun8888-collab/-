@@ -125,3 +125,30 @@ def test_ai_uses_only_selected_shop_profile(tmp_path,monkeypatch):
   assert (await c.handle(event(text='卖什么'))).status=='sent'
   assert '甲店只卖书' in prompts[0] and '乙店只卖衣服' not in prompts[0]
  asyncio.run(run())
+
+
+def test_disabling_other_shop_does_not_drop_pending_reply(tmp_path):
+ class Delayed:
+  def __init__(self): self.started=asyncio.Event(); self.done=asyncio.Event()
+  async def reply(self,text): self.started.set(); await self.done.wait(); return '甲店回复'
+ async def run():
+  s,a,c=setup(tmp_path); c.set_enabled(True); c.enable_shop('乙',True)
+  s.set_settings({'fallback':'ai'}); ai=Delayed(); c.ai=ai
+  task=asyncio.create_task(c.handle(event())); await ai.started.wait()
+  c.enable_shop('乙',False); ai.done.set()
+  assert (await task).status=='sent'
+  assert a.sent[0][0]=='甲'
+ asyncio.run(run())
+
+
+def test_uniform_fixed_reply_needs_no_ai(tmp_path):
+ class ForbiddenAI:
+  async def reply(self,text): raise AssertionError('固定回复不能调用 AI')
+ async def run():
+  s,a,c=setup(tmp_path); c.set_enabled(True); c.ai=ForbiddenAI()
+  s.set_settings({'simple_mode':True,'simple_reply':'您好，在的。','fallback':'ai'})
+  first=await c.handle(event(text='价格是多少'))
+  second=await c.handle(event('2',text='什么时候发货'))
+  assert first.status==second.status=='sent'
+  assert first.reply==second.reply=='您好，在的。'
+ asyncio.run(run())
