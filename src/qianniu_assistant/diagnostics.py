@@ -1,68 +1,48 @@
-"""只读 UIA 结构检测。不修改千牛，不据控件存在就宣称可收发。"""
+"""版本 2 的只读诊断；发现窗口不等于自动回复已经可用。"""
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import platform
+import struct
 import sys
+from .diagnostic_tree import assess_windows
 
 
-def diagnose(include_names=False):
-    result = {'target_version':'9.1907n','platform':platform.platform(),
-              'python':platform.python_version(),'created':datetime.now(timezone.utc).isoformat(),
+def diagnose(include_names=False, on_progress=None):
+    result = {'report_version':2,'target_version':'9.1907n','target_display_version':'9.19.07N (1686)',
+              'platform':platform.platform(),
+              'python':platform.python_version(),'python_bits':struct.calcsize('P')*8,
+              'created':datetime.now(timezone.utc).isoformat(),
               'live_ready':False,'version_verified':False,'windows':[], 'warnings':[],
               'capabilities':dict.fromkeys(['shop_identity','conversation_identity','message_events',
-                                          'direction','draft_state','send_confirmation'],False)}
+                                          'direction','draft_state','send_confirmation'],False),
+              'capabilities_note':'这些能力尚未通过验收；false 不代表已逐项测试并确认不存在。'}
+    if on_progress:
+        on_progress(result)
     if sys.platform != 'win32':
         result['warnings'].append('当前不是 Windows，无法检测千牛。真实发送保持关闭。')
         return result
+    def checkpoint(window):
+        by_handle = {w['handle']:i for i,w in enumerate(result['windows'])}
+        if window['handle'] in by_handle:
+            result['windows'][by_handle[window['handle']]] = window
+        else:
+            result['windows'].append(window)
+        result['assessment'] = assess_windows(result['windows'])
+        if on_progress:
+            on_progress(result)
     try:
-        from pywinauto import Desktop
-        import win32api
-        import win32process
-        desktop = Desktop(backend='uia')
-        windows = desktop.windows()
-        for window in windows:
-            try:
-                pid = window.process_id()
-                handle = win32api.OpenProcess(0x410,False,pid)
-                try:
-                    exe = win32process.GetModuleFileNameEx(handle,0)
-                finally:
-                    handle.Close()
-                basename = Path(exe).name
-                if not any(word in basename.casefold() for word in ('qianniu','aliworkbench','千牛')):
-                    continue
-                versions = {}
-                try:
-                    for lang, page in win32api.GetFileVersionInfo(exe,'\\VarFileInfo\\Translation'):
-                        for key in ('FileVersion','ProductVersion'):
-                            versions[key] = win32api.GetFileVersionInfo(exe,f'\\StringFileInfo\\{lang:04x}{page:04x}\\{key}')
-                except Exception:
-                    versions['status'] = '无法读取版本资源'
-                nodes, queue = [], [(window,0)]
-                while queue and len(nodes) < 400:
-                    item, depth = queue.pop(0)
-                    info = item.element_info
-                    entry = {'depth':depth,'control_type':info.control_type,
-                             'automation_id':info.automation_id,'class_name':info.class_name}
-                    if include_names:
-                        entry['name'] = (info.name or '')[:300]
-                    nodes.append(entry)
-                    if depth < 6:
-                        try:
-                            queue.extend((child,depth+1) for child in item.children()[:100])
-                        except Exception:
-                            result['warnings'].append('部分控件不可读取。')
-                result['windows'].append({'pid':pid,'executable':basename,'versions':versions,
-                                          'controls':nodes,'truncated':bool(queue)})
-            except Exception:
-                # Inaccessible unrelated windows do not establish a QianNiu failure.
-                continue
-        if not result['windows']:
-            result['warnings'].append('未找到可访问的千牛进程窗口，请启动千牛后再检测。')
-    except Exception:
-        result['warnings'].append('Windows UIA 检测不可用，请检查依赖与进程权限。')
-    result['warnings'].append('当前仅完成结构采集；须据实机结果验证店铺/会话/消息身份及发送确认后编写收发适配。真实发送未开放。')
+        from .windows_diagnostics import collect_windows
+        observed = collect_windows(include_names,on_window=checkpoint)
+        result['windows'] = observed['windows']
+        result['scan'] = observed['scan']
+        if observed['scan']['truncated']:
+            result['warnings'].append('达到检测时间或数量上限，当前结构可能不完整。')
+    except Exception as exc:
+        result['warnings'].append('Windows 只读检测出现错误：'+type(exc).__name__)
+    result['assessment'] = assess_windows(result['windows'])
+    result['warnings'].append(result['assessment']['next_action'])
+    result['warnings'].append('仍需验证店铺/会话/消息身份、人工草稿和发送确认；真实发送未开放。')
     return result
 
 
@@ -73,4 +53,7 @@ def summarize(report):
 
 
 def save_report(path, report):
-    Path(path).write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+    path = Path(path)
+    temporary = path.with_name(path.name+'.tmp')
+    temporary.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
+    temporary.replace(path)
